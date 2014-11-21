@@ -1,0 +1,154 @@
+//Instructions: 
+// 1. Create or open a Google Spreadsheet
+// 2. Go to Tools > Script Editor...
+// 3. Paste the code below into the editor
+// 4. Edit the constants below, per instructions.
+// 5. Save
+// 6. Run "masterFunction"
+
+//CONSTANTS (edit these values)
+var sheetName = "Sheet1";   // This is the name of the sheet (tab) where your pivotal data will be pasted
+var projectId = "#######";  // This is the ID of your Pivotal project. Open the pivotal project
+                            // in your browser and copy the numbers at the end of your URL
+var userName = "your user name"; // The credentials for your Pivotal account that has access to the board
+var password = "your password";
+
+
+//MASTER FUNCTION
+function masterFunction(){
+    
+  // API Documentation here https://www.pivotaltracker.com/help/api/rest/v5
+
+  var  apiUrl  =  'https://www.pivotaltracker.com/services/v5/';  
+  var token = getToken(userName,password, apiUrl);
+  
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  
+  getPivotalDataAndPaste(corePayrollSheetName, corePayrollProjectId, spreadsheet, token, apiUrl);
+  getPivotalDataAndPaste(stateExpansionSheetName, stateExpansionProjectId, spreadsheet, token, apiUrl);
+  getPivotalDataAndPaste(platformSheetName, platformProjectId, spreadsheet, token, apiUrl);
+ 
+}
+
+//GETS API TOKEN 
+function  getToken(user,pass,apiUrl) { 
+
+  extUrl = "me";
+  var auth_data = Utilities.base64Encode(user + ":" + pass);
+  var headers = 
+      {
+        "Authorization" : "Basic " + auth_data
+      };
+  
+  var params = 
+      {
+        "method" : "GET",
+        "muteHttpExceptions" : true,
+        "headers" : headers
+      };
+   
+  // Fetch 
+  var  response = UrlFetchApp.fetch(apiUrl+extUrl,params); 
+  var jsonOfResponse = JSON.parse(response.getContentText()); // converts the response to formatted text
+  var token  = jsonOfResponse.api_token;
+  Logger.log(token);
+  return token;
+}
+
+//FETCH ITERATION STORIES AND PARSE
+function getElementFromApi(token, projId, apiUrl) {
+ 
+  var extUrl = 'projects/' + projId + '/iterations';
+  var limit = 500;
+  extUrl += '?limit='+ limit;
+        headers =
+          {
+            "X-TrackerToken"  : token,
+            "X-Tracker-Use-UTC": true
+          },
+        params =
+          {
+          "method" : 'GET',
+          "headers": headers
+          };
+  // Fetch
+  var response = UrlFetchApp.fetch(apiUrl+extUrl , params);
+  var jsonOfResponse = JSON.parse(response.getContentText()); // converts the response to formatted text
+  Logger.log(response);
+  
+  // Establish header row
+  var dataArray = new Array([]);
+  dataArray[0][0] = "Id";
+  dataArray[0][1] = "Title";
+  dataArray[0][2] = "Labels";
+  dataArray[0][3] = "Iteration";
+  dataArray[0][4] = "Iteration start";
+  dataArray[0][5] = "Iteration end";
+  dataArray[0][6] = "Type";
+  dataArray[0][7] = "Estimate";
+  dataArray[0][8] = "Current State";
+  dataArray[0][9] = "Description";
+  dataArray[0][10] = "URL";
+  
+  var rowNumber = 1;
+
+  for (var iteration = 0; iteration < jsonOfResponse.length; iteration++) { 
+  for (var i = 0; i < jsonOfResponse[iteration].stories.length; i++) {    
+     dataArray.push([]);
+
+     dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].id)[0];
+     dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].name)[1];     
+     if (jsonOfResponse[iteration].stories[i].labels.length !== 0) {
+       dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].labels[0].name)[2]; 
+       for (var j = 1; j < jsonOfResponse[iteration].stories[i].labels.length; j++) { 
+         dataArray[rowNumber][2] += ", "+jsonOfResponse[iteration].stories[i].labels[j].name;
+       }
+     } else {
+       dataArray[rowNumber].push("")[2];
+     }
+     if (jsonOfResponse[iteration].number !== undefined) {
+       dataArray[rowNumber].push(jsonOfResponse[iteration].number)[3];
+     } else {
+       dataArray[rowNumber].push("")[3];
+     }
+     if (jsonOfResponse[iteration].start !== undefined) {
+       dataArray[rowNumber].push(jsonOfResponse[iteration].start)[4];
+     } else {
+       dataArray[rowNumber].push("")[4];
+     }    
+     if (jsonOfResponse[iteration].finish !== undefined) {
+       dataArray[rowNumber].push(jsonOfResponse[iteration].finish)[5];
+     } else {
+       dataArray[rowNumber].push("")[5];
+     }     
+     dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].kind)[6];
+     if (jsonOfResponse[iteration].stories[i].estimate !== undefined) {
+       dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].estimate)[7];
+     } else {
+       dataArray[rowNumber].push("")[7];
+     }
+     dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].current_state)[8]; 
+     if (jsonOfResponse[iteration].stories[i].description !== undefined) {
+       dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].description)[9];
+     } else {
+       dataArray[rowNumber].push("")[9];
+     }    
+     dataArray[rowNumber].push(jsonOfResponse[iteration].stories[i].url)[10];
+     rowNumber++;
+  }    
+    
+  } 
+
+  return dataArray;
+}
+
+function getPivotalDataAndPaste(sheetName, projectId, spreadsheet, token, apiUrl ) {
+  
+  var sheet = spreadsheet.getSheetByName(sheetName); 
+  var stories = getElementFromApi(token, projectId, apiUrl);
+  Logger.log("length "+stories.length);
+  Logger.log("width "+stories[0].length);
+  var destinationRange = sheet.getRange(1, 1,stories.length,stories[0].length);
+  destinationRange.setValues(stories);
+
+}
